@@ -1,0 +1,43 @@
+{
+  "name": "pi-claude",
+  "version": "1.0.0",
+  "description": "Standalone Claude subscription provider for Pi Coding Agent — single-account OAuth (/login claude & /logout), native HTTP streaming without claude.exe, live model catalog, and quota usage tracking",
+  "author": "amirulaliffcherahim",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amirulaliffcherahim/pi-claude.git"
+  },
+  "homepage": "https://github.com/amirulaliffcherahim/pi-claude#readme",
+  "bugs": {
+    "url": "https://github.com/amirulaliffcherahim/pi-claude/issues"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "claude",
+    "anthropic",
+    "oauth",
+    "provider"
+  ],
+  "files": [
+    "LICENSE",
+    "README.md",
+    "src",
+    "tsconfig.json"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.80.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0"
+  }
+}
