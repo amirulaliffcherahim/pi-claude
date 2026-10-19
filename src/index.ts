@@ -9,7 +9,6 @@ import {
 import { getDiagnostics, maskEmail, redactSecrets } from "./diagnostics.js";
 import {
   CLAUDE_API,
-  discoverClaudeModels,
   getCurrentClaudeModels,
   PROVIDER_ID,
   PROVIDER_NAME,
@@ -26,7 +25,6 @@ import {
 import { ATTRIBUTION_SALT, streamClaude } from "./stream.js";
 import {
   fetchClaudeUsage,
-  formatClaudeModelsAvailability,
   formatClaudeUsageSummary,
   resolveClaudeTokenFromContext,
 } from "./usage.js";
@@ -123,76 +121,6 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 
-  // /claude-models
-  pi.registerCommand("claude-models", {
-    description: "List Claude models + live quota availability and capabilities",
-    handler: async (_args, ctx) => {
-      const token = await resolveClaudeTokenFromContext(ctx);
-      if (!token) {
-        emitCommandOutput(
-          ctx,
-          "No Claude credentials. Run /login claude first.",
-          "warning",
-        );
-        return;
-      }
-      if (ctx.hasUI) ctx.ui.notify("Fetching Claude models and availability…", "info");
-      try {
-        const [ , usage] = await Promise.all([
-          discoverClaudeModels(token, ctx.signal).catch(() => getCurrentClaudeModels()),
-          fetchClaudeUsage(token, ctx.signal),
-        ]);
-        emitCommandOutput(ctx, formatClaudeModelsAvailability(usage));
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        emitCommandOutput(ctx, `Claude models check failed: ${redactSecrets(msg)}`, "warning");
-      }
-    },
-  });
-
-  // /claude-refresh
-  pi.registerCommand("claude-refresh", {
-    description: "Force refresh Claude dynamic model catalog from /v1/models",
-    handler: async (_args, ctx) => {
-      const token = await resolveClaudeTokenFromContext(ctx);
-      if (!token) {
-        emitCommandOutput(
-          ctx,
-          "No Claude credentials. Run /login claude first.",
-          "warning",
-        );
-        return;
-      }
-      if (ctx.hasUI) ctx.ui.notify("Refreshing Claude model catalog…", "info");
-      try {
-        if (typeof ctx.modelRegistry?.refresh === "function") {
-          const result = await ctx.modelRegistry.refresh({
-            force: true,
-            providers: [PROVIDER_ID],
-          });
-          if (result?.errors?.has(PROVIDER_ID)) {
-            throw result.errors.get(PROVIDER_ID)!;
-          }
-        } else {
-          await discoverClaudeModels(token, ctx.signal);
-        }
-        const models = getCurrentClaudeModels();
-        const sample = models
-          .slice(0, 5)
-          .map((m) => m.id)
-          .join(", ");
-        emitCommandOutput(
-          ctx,
-          `Claude models refreshed (${models.length} available: ${sample}${models.length > 5 ? ", …" : ""})`,
-          "info",
-        );
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        emitCommandOutput(ctx, `Claude model refresh failed: ${redactSecrets(msg)}`, "error");
-      }
-    },
-  });
-
   // /claude-doctor
   pi.registerCommand("claude-doctor", {
     description: "Show sanitized Claude (pi-claude) provider diagnostics and health",
@@ -229,7 +157,7 @@ export default function (pi: ExtensionAPI): void {
         `lastError=${d.lastError ? redactSecrets(d.lastError) : "none"}`,
         "transport=native-streamSimpleAnthropic (standalone, no claude.exe required)",
         "accountMode=single-account (/login claude, /logout)",
-        "commands=/claude-doctor /claude-usage /claude-models /claude-refresh",
+        "commands=/claude-doctor /claude-usage",
       ];
       emitCommandOutput(ctx, `pi-claude doctor\n${lines.join("\n")}`);
     },

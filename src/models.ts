@@ -1,5 +1,5 @@
 import type { RefreshModelsContext } from "@earendil-works/pi-ai";
-import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { updateDiagnostics } from "./diagnostics.js";
 import { BASE_API_URL, CLAUDE_CODE_VERSION, defaultUserAgent, OAUTH_BETA } from "./oauth.js";
@@ -31,7 +31,12 @@ export function buildInitialClaudeModels(): ProviderModelConfig[] {
     "claude-haiku-4-5",
   ];
 
-  const allEntries = Object.values(ANTHROPIC_MODELS) as unknown as ProviderModelConfig[];
+  let allEntries: ProviderModelConfig[] = [];
+  try {
+    allEntries = (getBuiltinModels("anthropic") ?? []) as unknown as ProviderModelConfig[];
+  } catch {
+    allEntries = [];
+  }
   const byId = new Map<string, ProviderModelConfig>();
   for (const entry of allEntries) {
     byId.set(entry.id, {
@@ -197,6 +202,33 @@ export async function discoverClaudeModels(
 export async function refreshClaudeModels(
   context: RefreshModelsContext,
 ): Promise<ProviderModelConfig[]> {
+  const current = getCurrentClaudeModels();
+
+  // If cached state exists from a previous session, restore it synchronously
+  if (context.stored && isRecord(context.stored)) {
+    const persisted = context.stored.models;
+    if (Array.isArray(persisted) && persisted.length > 0) {
+      setCurrentClaudeModels(persisted as unknown as ProviderModelConfig[]);
+    }
+  }
+
+  // Publish baseline catalog to modelsStore so models survive across restarts and offline
+  if (typeof context.publish === "function") {
+    try {
+      await context.publish({
+        persist: {
+          models: getCurrentClaudeModels() as unknown as StoredModelConfig[],
+          checkedAt: Date.now(),
+        } as unknown as ModelsStoreEntry,
+        update: () => {
+          // Model catalog synced
+        },
+      });
+    } catch {
+      // Best-effort publication
+    }
+  }
+
   if (!context.allowNetwork || context.signal.aborted) {
     return getCurrentClaudeModels();
   }
@@ -210,9 +242,24 @@ export async function refreshClaudeModels(
     return getCurrentClaudeModels();
   }
   try {
-    return await discoverClaudeModels(token, context.signal);
+    const discovered = await discoverClaudeModels(token, context.signal);
+    if (typeof context.publish === "function" && discovered.length > 0) {
+      await context.publish({
+        persist: {
+          models: discovered as unknown as StoredModelConfig[],
+          checkedAt: Date.now(),
+        } as unknown as ModelsStoreEntry,
+      });
+    }
+    return discovered;
   } catch (error) {
     if (context.force) throw error;
     return getCurrentClaudeModels();
   }
 }
+
+function isRecord(val: unknown): val is Record<string, unknown> {
+  return typeof val === "object" && val !== null && !Array.isArray(val);
+}
+
+type StoredModelConfig = Record<string, unknown>;

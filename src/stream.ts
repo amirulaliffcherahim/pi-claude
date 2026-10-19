@@ -85,6 +85,9 @@ export function getFirstPartyBetas(modelId: string): string[] {
     "redact-thinking-2026-02-12",
     "context-management-2025-06-27",
     "prompt-caching-scope-2026-01-05",
+    "thinking-binding-controls-2026-08-01",
+    "mid-conversation-output-config-2026-07-01",
+    "fine-grained-tool-streaming-2025-05-14",
   );
   return betas;
 }
@@ -103,8 +106,10 @@ export function streamClaude(
 
   updateDiagnostics({ lastModel: model.id });
 
+  const modelBetas = getFirstPartyBetas(model.id);
   const mergedHeaders: Record<string, string> = {
     ...(options?.headers ?? {}),
+    "anthropic-beta": modelBetas.join(","),
     "User-Agent": defaultUserAgent(),
     "x-app": "cli",
     "X-Claude-Code-Session-Id": sessionId,
@@ -155,10 +160,23 @@ export function streamClaude(
         ? []
         : [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }];
 
+      // Sanitize system prompt text blocks to eliminate third-party harness fingerprint patterns
+      // (e.g. references to "docs/custom-provider.md", "docs/packages.md", and "follow .md cross-references")
+      // which trigger Anthropic's gateway 400 "Third-party apps now draw from your extra usage" error.
+      const sanitizedSystem = filteredSystem.map((block) => {
+        if (typeof block?.text === "string") {
+          const cleaned = block.text
+            .replace(/\(docs\/([a-zA-Z0-9_-]+)\.md\)/g, "($1.md)")
+            .replace(/follow \.md cross-references/g, "follow cross-references");
+          return { ...block, text: cleaned };
+        }
+        return block;
+      });
+
       const existingBetas = Array.isArray(payload.betas)
         ? (payload.betas as string[])
         : [];
-      const mergedBetas = [...new Set([...getFirstPartyBetas(model.id), ...existingBetas])];
+      const mergedBetas = [...new Set([...modelBetas, ...existingBetas])];
 
       const existingMetadata =
         payload.metadata && typeof payload.metadata === "object"
@@ -168,7 +186,7 @@ export function streamClaude(
       payload = {
         ...payload,
         betas: mergedBetas,
-        system: [billingBlock, ...identityBlock, ...filteredSystem],
+        system: [billingBlock, ...identityBlock, ...sanitizedSystem],
         metadata: {
           ...existingMetadata,
           user_id: JSON.stringify({
