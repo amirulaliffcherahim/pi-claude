@@ -63,15 +63,14 @@ function registerCompatApiProvider(): void {
 export default function (pi: ExtensionAPI): void {
   registerCompatApiProvider();
 
-  // Refresh dynamic model catalog from /v1/models on session start
-  pi.on("session_start", async (_event, ctx) => {
+  // Refresh dynamic model catalog from /v1/models on session start.
+  // Not awaited: pi blocks input until session_start handlers finish.
+  pi.on("session_start", (_event, ctx) => {
     if (process.env.PI_OFFLINE !== undefined) return;
     if (typeof ctx.modelRegistry?.refresh !== "function") return;
-    try {
-      await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID] });
-    } catch {
+    ctx.modelRegistry.refresh({ providers: [PROVIDER_ID] }).catch(() => {
       // Keep initial fallback catalog on error
-    }
+    });
   });
 
   const providerConfig = {
